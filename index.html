@@ -1,308 +1,1107 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barclays - Connexion Espace Client</title>
-    <style>
-        /* --- CSS : DÉBUT --- */
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { 
+    ChevronLeft, ChevronDown, Bell, LogOut, Send, BookOpen, Clock, Users, Shield, 
+    DollarSign, Menu, LifeBuoy, MessageSquare, Lock, X, PlusCircle
+} from 'lucide-react'; 
+
+// --- CONFIGURATION ET DONNÉES GLOBALES ---
+const REQUIRED_LOGIN = '7897620168';
+const REQUIRED_PASSWORD = '548521';
+const ACCOUNT_HOLDER_NAME = 'Brennard Wanesse'; 
+const INITIAL_BALANCE = 243500;
+
+// Notification non lue initiale
+const INITIAL_UNREAD_NOTIFICATION_DATA = {
+    id: 1,
+    date: '15/10/2025',
+    title: 'Mise à jour Importante du Solde',
+    // Message corrigé : le texte long de test a été supprimé
+    message: `
+        Salut !
+        Mr Bernard Wanesse, les 243 500 € sur votre solde ont été générés à la suite de placements effectués sur les marchés. En l’absence d’une infrastructure de gestion d’actifs numériques dédiée, les produits financiers ont été provisoirement centralisés auprès de la banque Barclays, avant d’être transférés sur votre compte en tant que bénéficiaire économique légitime de ces avoirs.
+
+        Veuillez consulter votre relevé de compte pour plus de détails sur cette opération de crédit exceptionnelle.`,
+    isRead: false,
+};
+
+// Historique des transactions initiales
+const INITIAL_TRANSACTION_HISTORY = [
+    { id: 4, date: '13/11/2025', description: 'Virement Mathias Thibaut (****2 2782)', amount: 3000, type: 'debit' },
+    { id: 3, date: '04/11/2025', description: 'Virement Wilfried Ebo (****5 6854)', amount: 1400, type: 'debit' },
+    { id: 2, date: '27/10/2025', description: 'Virement Wilfried Ebo (****5 6854)', amount: 1200, type: 'debit' },
+    { id: 1, date: '15/10/2025', description: 'Crédit initial (Fonds d\'investissement)', amount: 243500, type: 'credit' },
+];
+
+
+// --- FONCTIONS UTILITAIRES ---
+// Fonction pour formater le solde
+const formatBalance = (balance) => {
+    return balance.toLocaleString('fr-FR', {
+        style: 'currency',
+        currency: 'EUR',
+        minimumFractionDigits: 0
+    }).replace('€', ' €');
+};
+
+const formatAmount = (amount, type) => {
+    const sign = type === 'debit' ? '-' : '+';
+    const formatted = amount.toLocaleString('fr-FR', {
+        style: 'currency',
+        currency: 'EUR',
+        minimumFractionDigits: 0
+    }).replace('€', ' €');
+    return `${sign} ${formatted}`;
+};
+
+const getCurrentDate = () => {
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const year = now.getFullYear();
+    return `${day}/${month}/${year}`;
+};
+
+// --- DÉFINITION DES ICÔNES SVG DES PARTENAIRES ---
+const BitcoinLogo = () => (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-yellow-500">
+        <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM15.65 15.65C14.88 16.42 13.73 16.89 12.43 16.89H10.5V18H8.5V16.89C6.88 16.53 5.56 15.22 5.20 13.6H6.77C6.98 14.28 7.37 14.88 7.90 15.34C8.43 15.80 9.07 16.07 9.80 16.2L9.67 16.7H8.5V18H10.5V16.89C11.80 16.89 12.95 16.42 13.72 15.65C14.48 14.88 14.89 13.74 14.89 12.45C14.89 11.16 14.48 10.02 13.72 9.25C12.95 8.48 11.80 8.01 10.50 8.01H8.5V6H10.5C11.80 6 12.95 6.47 13.72 7.24C14.48 8.01 14.89 9.15 14.89 10.44C14.89 11.73 14.48 12.87 13.72 13.64C12.95 14.41 11.80 14.88 10.50 14.88H8.5V13.6H10.5C11.11 13.6 11.69 13.38 12.13 12.95C12.57 12.51 12.79 11.93 12.79 11.32C12.79 10.71 12.57 10.13 12.13 9.69C11.69 9.25 11.11 9.03 10.50 9.03H8.5V7H10.5C11.80 7 12.95 7.47 13.72 8.24C14.48 9.01 14.89 10.15 14.89 11.44C14.89 12.73 14.48 13.87 13.72 14.64C12.95 15.41 11.80 15.88 10.50 15.88H8.5V16.89H10.5C11.80 16.89 12.95 16.42 13.72 15.65Z" fill="currentColor"/>
+    </svg>
+);
+
+const PaypalLogo = () => (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-blue-800">
+        <path fillRule="evenodd" clipRule="evenodd" d="M3.73 5.4C4.19 5.25 4.69 5.25 5.20 5.25H8.75C9.62 5.25 10.43 5.61 11.02 6.27C11.60 6.93 11.90 7.82 11.86 8.75V8.75C11.86 9.68 11.60 10.57 11.02 11.23C10.43 11.89 9.62 12.25 8.75 12.25H6.18C5.87 12.25 5.57 12.38 5.35 12.6C5.13 12.82 5.00 13.12 5.00 13.43V18.75C5.00 19.34 5.46 19.80 6.05 19.80C6.64 19.80 7.10 19.34 7.10 18.75V13.84H8.75C10.63 13.84 12.30 13.06 13.56 11.6C14.82 10.14 15.49 8.21 15.49 6.25C15.49 4.29 14.82 2.36 13.56 0.9C12.30 0.12 10.63 0 8.75 0H5.20C4.19 0 3.20 0.44 2.57 1.25C1.94 2.06 1.76 3.09 2.07 4.09L3.73 5.4ZM18.80 5.25H21.25C21.75 5.25 22.25 5.44 22.62 5.81C22.99 6.18 23.18 6.68 23.18 7.18V16.82C23.18 17.32 22.99 17.82 22.62 18.19C22.25 18.56 21.75 18.75 21.25 18.75H18.80C18.20 18.75 17.75 18.30 17.75 17.7V6.3C17.75 5.70 18.20 5.25 18.80 5.25Z" fill="currentColor"/>
+    </svg>
+);
+
+const MastercardLogo = () => (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8">
+        <circle cx="9" cy="12" r="7" fill="#EB001B"/>
+        <circle cx="15" cy="12" r="7" fill="#FF5F00" opacity="0.8"/>
+        <path d="M12 19C15.866 19 19 15.866 19 12C19 8.13401 15.866 5 12 5C8.13401 5 5 8.13401 5 12C5 15.866 8.13401 19 12 19Z" fill="#F79E1B" opacity="0.3"/>
+    </svg>
+);
+
+const WesternUnionLogo = () => (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-yellow-600">
+        <path fillRule="evenodd" clipRule="evenodd" d="M21 12L16 7V11H4V13H16V17L21 12Z" fill="currentColor"/>
+        <path d="M4 4H20V6H4V4Z" fill="currentColor" opacity="0.5"/>
+        <path d="M4 18H20V20H4V18Z" fill="currentColor" opacity="0.5"/>
+    </svg>
+);
+
+const EthereumLogo = () => (
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-purple-600">
+        <path d="M12 1L5 12L12 16L19 12L12 1ZM12 18V23L19 13L12 18Z" fill="currentColor"/>
+    </svg>
+);
+
+
+// --- COMPOSANT THREE.JS SCENE ---
+const ThreeScene = React.memo(({ currentPage }) => {
+    const mountRef = useRef(null);
+    const sceneRef = useRef(null);
+    const cameraRef = useRef(null);
+    const rendererRef = useRef(null);
+    const controlsRef = useRef(null);
+    const animationIdRef = useRef(null);
+    const mainElementsRef = useRef([]);
+
+    const create3DObject = useCallback((width, height, color, position) => {
+        const geometry = new THREE.BoxGeometry(width, height, 0.15);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: color, 
+            metalness: 0.2, 
+            roughness: 0.5 
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(position.x, position.y, position.z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        return mesh;
+    }, []);
+
+    useEffect(() => {
+        if (currentPage !== 'dashboard') return;
+
+        // 1. SCÈNE
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xf0f8ff);
+        sceneRef.current = scene;
+
+        // 2. CAMÉRA
+        const camera = new THREE.PerspectiveCamera(75, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
+        camera.position.set(0, 3, 5);
+        cameraRef.current = camera;
+
+        // 3. RENDU
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+        renderer.shadowMap.enabled = true;
+        mountRef.current.appendChild(renderer.domElement);
+        rendererRef.current = renderer;
+
+        // 4. CONTRÔLES
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.maxPolarAngle = Math.PI / 2;
+        controls.minDistance = 3;
+        controls.maxDistance = 10;
+        controlsRef.current = controls;
         
-        /* Variables de couleur */
-        :root {
-            --sky-blue: #87CEEB; /* Bleu ciel */
-            --barclays-blue: #0076a8; /* Un bleu plus profond pour le contraste */
-            --white: #ffffff;
-            --text-color: #333;
-        }
+        // 5. ÉCLAIRAGE
+        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
 
-        /* Général */
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: var(--white);
-            color: var(--text-color);
-        }
+        // 6. CRÉATION DES OBJETS 3D (Simples placeholders)
+        const elements = [];
 
-        /* En-tête (Header) */
-        .header {
-            background-color: var(--sky-blue);
-            color: var(--white);
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .logo-container {
-            display: flex;
-            align-items: center;
-        }
-        .eagle-logo {
-            font-size: 24px;
-            margin-right: 10px;
-        }
+        // Solde (Bleu Ciel) - HAUT GAUCHE
+        const balanceMesh = create3DObject(4, 3, 0x87CEEB, { x: -2, y: 1.5, z: 0 }); 
+        scene.add(balanceMesh);
+        elements.push(balanceMesh);
 
-        /* Page de Connexion */
-        #login-page {
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        .login-box {
-            background-color: var(--white);
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            width: 350px;
-            margin-top: -100px; /* Remonter la boîte de connexion */
-        }
-        .login-box h2 {
-            color: var(--barclays-blue);
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .input-group {
-            margin-bottom: 20px;
-        }
-        .input-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        .input-group input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-
-        /* Boutons */
-        .btn-primary {
-            width: 100%;
-            padding: 12px;
-            background-color: var(--sky-blue);
-            color: var(--white);
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: background-color 0.3s;
-        }
-        .btn-primary:hover {
-            background-color: var(--barclays-blue);
-        }
-
-        /* Messages d'erreur */
-        .error-text {
-            color: red;
-            text-align: center;
-            margin-top: 15px;
-        }
-
-        /* --- Tableau de Bord (Dashboard) --- */
-        .dashboard-header {
-            justify-content: space-between;
-            background-color: var(--barclays-blue); /* Couleur plus foncée pour l'en-tête */
-        }
-        .dashboard-header h1 {
-            font-size: 20px;
-        }
-        .nav-icons {
-            display: flex;
-            gap: 15px;
-        }
-        .icon-btn {
-            background: none;
-            border: none;
-            color: var(--white);
-            cursor: pointer;
-            padding: 8px;
-            border-radius: 4px;
-            transition: background-color 0.3s;
-        }
-        .icon-btn:hover {
-            background-color: rgba(255, 255, 255, 0.2);
-        }
-
-        /* Menu Déroulant (Dropdown) */
-        .dropdown {
-            position: relative;
-            display: inline-block;
-        }
-        .dropdown-content {
-            display: none;
-            position: absolute;
-            right: 0;
-            background-color: var(--white);
-            min-width: 160px;
-            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-            z-index: 1;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        .dropdown-content a {
-            color: var(--text-color);
-            padding: 12px 16px;
-            text-decoration: none;
-            display: block;
-        }
-        .dropdown-content a:hover {
-            background-color: #f1f1f1;
-            color: var(--barclays-blue);
-        }
-        .dropdown:hover .dropdown-content {
-            display: block;
-        }
-
-        /* Corps du Tableau de Bord */
-        .dashboard-main {
-            padding: 30px;
-            max-width: 900px;
-            margin: 20px auto;
-        }
-        .dashboard-main h2 {
-            color: var(--barclays-blue);
-            border-bottom: 2px solid var(--sky-blue);
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }
-        .account-summary {
-            display: flex;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .account-card {
-            background-color: var(--white);
-            border: 1px solid var(--sky-blue);
-            border-radius: 8px;
-            padding: 25px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            flex-grow: 1;
-        }
-        .account-card h3 {
-            color: var(--barclays-blue);
-            margin-top: 0;
-            margin-bottom: 15px;
-        }
-        .balance-container {
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-            text-align: center;
-        }
-        .balance-label {
-            display: block;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 5px;
-        }
-        .balance-amount {
-            font-size: 32px;
-            font-weight: bold;
-            color: #388e3c; /* Vert pour le solde positif */
-        }
-        /* --- CSS : FIN --- */
-    </style>
-</head>
-<body>
-    <div id="login-page">
-        <header class="header">
-            <div class="logo-container">
-                <span class="eagle-logo">🦅</span>
-                <h1>Barclays</h1>
-            </div>
-        </header>
-
-        <div class="login-box">
-            <h2>Connexion à votre Espace Client</h2>
-            <form id="login-form">
-                <div class="input-group">
-                    <label for="login">Identifiant (Login):</label>
-                    <input type="text" id="login" name="login" value="7897620168" required>
-                </div>
-                <div class="input-group">
-                    <label for="password">Mot de passe:</label>
-                    <input type="password" id="password" name="password" value="548521" required>
-                </div>
-                <button type="submit" class="btn-primary">SE CONNECTER</button>
-            </form>
-            <p id="error-message" class="error-text"></p>
-        </div>
-    </div>
-
-    <div id="dashboard-page" style="display: none;">
-        <header class="header dashboard-header">
-            <div class="logo-container">
-                <span class="eagle-logo">🦅</span>
-                <h1>Barclays</h1>
-            </div>
-            <div class="nav-icons">
-                <button class="icon-btn">🔔 Notifications</button>
-                <div class="dropdown">
-                    <button class="icon-btn menu-btn">☰ Menu</button>
-                    <div class="dropdown-content">
-                        <a href="#" onclick="alert('Page Virement simulée')">Virement</a>
-                        <a href="#" onclick="alert('Page Relevé de Compte simulée')">Relevé de Compte</a>
-                        <a href="#" onclick="showLogin()">Déconnexion</a>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-        <main class="dashboard-main">
-            <h2>👋 Bienvenue, Bernard Wanesse</h2>
-            <div class="account-summary">
-                <div class="card account-card">
-                    <h3>Compte Courant</h3>
-                    <p class="account-name">Titulaire : **Bernard Wanesse**</p>
-                    <p class="account-number">Numéro : FR76 XXXX XXXX 7890 12</p>
-                    <div class="balance-container">
-                        <span class="balance-label">Solde Actuel :</span>
-                        <span class="balance-amount">243 500 €</span>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script>
-        /* --- JAVASCRIPT : DÉBUT --- */
+        // Titulaire (Blanc) - Positionné au-dessus du Solde
+        const holderMesh = create3DObject(3, 1, 0xFFFFFF, { x: -3, y: 3.5, z: -1 }); 
+        scene.add(holderMesh);
+        elements.push(holderMesh);
         
-        document.getElementById('login-form').addEventListener('submit', function(event) {
-            event.preventDefault(); // Empêche l'envoi standard du formulaire
+        // --- Emplacements en bas (y=-2) ---
 
-            const login = document.getElementById('login').value;
-            const password = document.getElementById('password').value;
-            const errorMessage = document.getElementById('error-message');
+        // Historique des transactions (Gris Clair) - BAS GAUCHE
+        const historyMesh = create3DObject(5, 2.5, 0xE0E0E0, { x: -4, y: -2, z: 0 }); 
+        scene.add(historyMesh);
+        elements.push(historyMesh);
 
-            // Les identifiants demandés :
-            const requiredLogin = '7897620168';
-            const requiredPassword = '548521';
+        // Logos Partenaires (Gris Foncé) - BAS MILIEU
+        const logosMesh = create3DObject(3, 2.5, 0x90A4AE, { x: 1, y: -2, z: 0 });
+        scene.add(logosMesh);
+        elements.push(logosMesh);
 
-            if (login === requiredLogin && password === requiredPassword) {
-                errorMessage.textContent = '';
-                showDashboard(); // Afficher la page du tableau de bord
-            } else {
-                errorMessage.textContent = 'Identifiant ou mot de passe incorrect.';
+        // Support/Contact (Orange Clair) - BAS DROITE
+        const contactMesh = create3DObject(2, 2.5, 0xFFCC80, { x: 5.5, y: -2, z: 0.5 });
+        scene.add(contactMesh);
+        elements.push(contactMesh);
+
+        // --- Éléments du Menu ---
+
+        // Menu : Virement (Bleu Profond) - HAUT DROITE (légèrement ajusté)
+        const transferMesh = create3DObject(2.5, 1.5, 0x0076A8, { x: 3, y: 2, z: 0 });
+        scene.add(transferMesh);
+        elements.push(transferMesh);
+
+        // Menu : Relevé de Compte (Blanc) - HAUT DROITE (légèrement ajusté)
+        const statementMesh = create3DObject(2.5, 1.5, 0xFFFFFF, { x: 4, y: 0, z: -1 });
+        scene.add(statementMesh);
+        elements.push(statementMesh);
+        
+        mainElementsRef.current = elements;
+
+        // Sol (optionnel)
+        const floorGeometry = new THREE.PlaneGeometry(20, 20);
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0xe0f7fa });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+
+        // 7. FONCTION D'ANIMATION
+        const animate = () => {
+            animationIdRef.current = requestAnimationFrame(animate);
+            controls.update();
+
+            // Rotation lente des éléments 3D pour l'effet "Dashboard flottant"
+            mainElementsRef.current.forEach(element => {
+                element.rotation.y += 0.005;
+            });
+
+            renderer.render(scene, camera);
+        };
+
+        // 8. GESTION DU REDIMENSIONNEMENT
+        const handleResize = () => {
+            if (mountRef.current && rendererRef.current && cameraRef.current) {
+                cameraRef.current.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
+                cameraRef.current.updateProjectionMatrix();
+                rendererRef.current.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
             }
+        };
+
+        window.addEventListener('resize', handleResize, false);
+        animate();
+
+        // 9. NETTOYAGE (Cleanup function de React)
+        return () => {
+            if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
+            if (controls) controls.dispose();
+            if (renderer) renderer.dispose();
+            window.removeEventListener('resize', handleResize);
+            if (mountRef.current && renderer.domElement) {
+                mountRef.current.removeChild(renderer.domElement);
+            }
+        };
+
+    }, [currentPage, create3DObject]);
+
+    return (
+        <div 
+            ref={mountRef} 
+            id="canvas-container" 
+            className="absolute top-0 left-0 w-full h-full z-10"
+        />
+    );
+});
+
+
+// --- COMPOSANT PAGE DE CONNEXION ---
+const LoginPage = ({ onLogin }) => {
+    // Les valeurs initiales sont les identifiants requis pour faciliter le test
+    const [login, setLogin] = useState(REQUIRED_LOGIN);
+    const [password, setPassword] = useState(REQUIRED_PASSWORD);
+    const [error, setError] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (login === REQUIRED_LOGIN && password === REQUIRED_PASSWORD) {
+            setError('');
+            onLogin();
+        } else {
+            setError('Identifiant ou mot de passe incorrect. Veuillez réessayer.');
+        }
+    };
+
+    return (
+        <div id="login-page" className="bg-white p-6 sm:p-10 rounded-xl shadow-2xl w-11/12 max-w-sm md:max-w-md lg:max-w-lg border-t-8 border-sky-400 z-30 pointer-events-auto">
+            <div className="flex flex-col items-center mb-6">
+                <h1 className="text-3xl font-bold text-sky-500">Barclays</h1>
+            </div>
+            
+            <form onSubmit={handleSubmit}>
+                <div className="mb-4">
+                    <label htmlFor="login" className="block text-sm font-medium text-gray-700 mb-1">Identifiant (Login):</label>
+                    <input type="text" id="login" name="login" value={login} onChange={(e) => setLogin(e.target.value)} required
+                           className="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition"/>
+                </div>
+                <div className="mb-6">
+                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">Mot de passe:</label>
+                    <input type="password" id="password" name="password" value={password} onChange={(e) => setPassword(e.target.value)} required
+                           className="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition"/>
+                </div>
+                
+                <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200">
+                    SE CONNECTER
+                </button>
+            </form>
+            <p id="error-message" className="text-red-500 text-center mt-4">{error}</p>
+        </div>
+    );
+};
+
+// --- NOUVEAU: COMPOSANT MODALE PERSONNALISÉE (Remplace alert/prompt) ---
+const CustomModal = ({ isOpen, onClose, title, children }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 pointer-events-auto" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 sm:p-8 transform transition-all duration-300 scale-100" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-start mb-4 border-b pb-3">
+                    <h3 className="text-xl font-bold text-sky-800 flex items-center">
+                        {title}
+                    </h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+                        <X className="w-6 h-6"/>
+                    </button>
+                </div>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+// --- COMPOSANT MODALE DE NOTIFICATION ---
+const NotificationModal = ({ isOpen, onClose, notifications }) => {
+    if (!isOpen) return null;
+
+    // Affiche uniquement les 10 dernières notifications pour l'exemple
+    const displayNotifications = notifications.slice(0, 10);
+    
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4 pointer-events-auto" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 sm:p-8 transform transition-all duration-300 scale-100" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-start mb-4 border-b pb-3">
+                    <h3 className="text-2xl font-bold text-sky-800 flex items-center">
+                        <Bell className="w-6 h-6 mr-3 text-yellow-500"/> Notifications ({notifications.length})
+                    </h3>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+                        <X className="w-6 h-6"/>
+                    </button>
+                </div>
+                
+                <div className="max-h-[70vh] overflow-y-auto space-y-3">
+                    {displayNotifications.length > 0 ? (
+                        displayNotifications.map((notif) => (
+                            <div key={notif.id} className={`p-4 rounded-lg shadow-md border ${notif.isRead ? 'bg-gray-50 border-gray-200' : 'bg-yellow-50 border-yellow-300'}`}>
+                                <p className="text-sm text-gray-500 font-medium mb-1">{notif.date}</p>
+                                <h4 className={`font-bold ${notif.isRead ? 'text-gray-800' : 'text-sky-800'}`}>{notif.title}</h4>
+                                {/* Utilisation de max-h-32 et overflow-y-auto pour le défilement du message */}
+                                <div className="text-sm text-gray-700 mt-2 whitespace-pre-line max-h-32 overflow-y-auto pr-2">
+                                    {notif.message.trim().split('\n').map((line, index) => (
+                                        <p key={index} className="mb-1 last:mb-0">{line.trim()}</p>
+                                    ))}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="text-center py-10 text-gray-500">
+                            Aucune nouvelle notification.
+                        </div>
+                    )}
+                </div>
+                
+                <button onClick={onClose} className="mt-6 w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 rounded-lg transition duration-200">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
+// --- COMPOSANTS DES OVERLAYS (réutilisés par Dashboard) ---
+
+// Historique des transactions
+const TransactionHistoryOverlay = ({ transactions }) => {
+    const cardClasses = 'p-4 sm:p-6 rounded-xl shadow-2xl backdrop-blur-sm w-full md:w-80 lg:w-96 flex-shrink-0'; 
+    
+    // N'afficher que les 5 dernières transactions
+    const latestTransactions = transactions.slice(0, 5);
+
+    return (
+        <div id="history-overlay" 
+             className={cardClasses}
+             style={{ 
+                backgroundColor: 'rgba(224, 224, 224, 0.7)', // Gris Clair transparent
+                pointerEvents: 'auto' 
+             }}
+        >
+            <h3 className="text-xl font-bold text-gray-800 mb-3 flex items-center"><Clock className="w-5 h-5 mr-2 text-sky-600"/> Historique Récent</h3>
+            
+            <div className="space-y-3 max-h-48 overflow-y-auto">
+                {latestTransactions.map((transaction) => (
+                    <div key={transaction.id} className="flex justify-between items-center bg-white/70 p-3 rounded-lg shadow-md">
+                        <div>
+                            <p className="text-sm font-medium text-gray-700">{transaction.description}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">{transaction.date}</p>
+                        </div>
+                        <p className={`text-lg font-bold ${transaction.type === 'debit' ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatAmount(transaction.amount, transaction.type)}
+                        </p>
+                    </div>
+                ))}
+                {latestTransactions.length === 0 && (
+                    <p className="text-center text-gray-500 pt-3">Aucune transaction récente.</p>
+                )}
+                <div className="text-center pt-2">
+                    <button className="text-sm font-semibold text-sky-600 hover:text-sky-800 transition">Voir toutes les opérations →</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// Logos Partenaires
+const PartnerLogosOverlay = ({ handleMastercardDeposit }) => {
+    const logos = [
+        { name: 'Crypto', icon: <BitcoinLogo />, isInteractive: false },
+        { name: 'PayPal', icon: <PaypalLogo />, isInteractive: false },
+        { name: 'Mastercard', icon: <MastercardLogo />, isInteractive: true, action: handleMastercardDeposit },
+        { name: 'W. Union', icon: <WesternUnionLogo />, isInteractive: false },
+        { name: 'ETH B2B', icon: <EthereumLogo />, isInteractive: false },
+    ];
+
+    const cardClasses = 'p-4 sm:p-6 rounded-xl shadow-2xl backdrop-blur-sm w-full md:w-60 lg:w-64 flex-shrink-0';
+    
+    return (
+        <div id="partner-logos-overlay" 
+             className={cardClasses} 
+             style={{ 
+                backgroundColor: 'rgba(144, 164, 174, 0.7)', // Gris Ardoise transparent
+                pointerEvents: 'auto'
+             }}
+        >
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center"><Users className="w-5 h-5 mr-2 text-white"/> Transferts & Partenaires</h3>
+            
+            <div id="partner-logos" className="grid grid-cols-3 gap-3 sm:grid-cols-3 lg:grid-cols-2">
+                {logos.map((logo, index) => (
+                    <button 
+                        key={index} 
+                        onClick={logo.isInteractive ? logo.action : undefined}
+                        // Style conditionnel
+                        className={`
+                            flex flex-col items-center p-2 bg-white/80 rounded-lg shadow-inner transition duration-200
+                            ${logo.isInteractive 
+                                ? 'cursor-pointer hover:bg-white ring-2 ring-offset-1 ring-sky-500 transform scale-105' 
+                                : 'cursor-default opacity-80'
+                            }
+                        `}
+                        disabled={!logo.isInteractive}
+                    >
+                        {logo.icon}
+                        <span className="text-xs font-semibold text-gray-700 mt-1 text-center">{logo.name}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+
+// Options de contact et de support
+const SupportContactOverlay = () => {
+    // Définition des icônes Lucide-React
+    const PhoneLogo = () => <DollarSign className="w-5 h-5 text-sky-600"/>
+    const ChatLogo = () => <MessageSquare className="w-5 h-5 text-sky-600"/>
+    const LockLogo = () => <Shield className="w-5 h-5 text-red-600"/>
+    
+    const options = [
+        // Utilisation des icônes comme composants React
+        { name: 'Appeler le Support', icon: <PhoneLogo />, action: () => console.log("Appel au support simulé : 0800 555 1234") },
+        { name: 'Chat en Direct', icon: <ChatLogo />, action: () => console.log("Lancement du chat en direct simulé") },
+        { name: 'Bloquer la Carte', icon: <LockLogo />, action: () => console.log("Procédure de blocage de carte d'urgence simulée") },
+    ];
+
+    return (
+        <div id="support-contact-overlay" 
+             className="p-4 sm:p-6 rounded-xl shadow-2xl backdrop-blur-sm w-full md:w-60 lg:w-64 flex-shrink-0" 
+             style={{ 
+                backgroundColor: 'rgba(255, 255, 255, 0.8)', // Blanc très léger
+                pointerEvents: 'auto' 
+             }}
+        >
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center"><LifeBuoy className="w-5 h-5 mr-2 text-sky-600"/> Aide & Support</h3>
+            
+            <div id="support-options" className="space-y-3">
+                {options.map((option, index) => (
+                    <button key={index} onClick={option.action}
+                         className="flex items-center w-full p-3 bg-white hover:bg-sky-50 transition duration-200 rounded-lg shadow-md">
+                        {/* Assurez-vous que option.icon est un élément React valide */}
+                        {option.icon}
+                        <span className={`text-sm font-semibold ml-3 ${option.name.includes('Bloquer') ? 'text-red-600' : 'text-gray-700'}`}>
+                            {option.name}
+                        </span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+
+// --- COMPOSANT TABLEAU DE BORD (DASHBOARD) ---
+const Dashboard = ({ onLogout, navigate, currentBalance, handleMastercardDeposit, transactions, notifications, handleOpenNotification }) => { 
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isServicesOpen, setIsServicesOpen] = useState(false);
+    
+    // Calculer le nombre de notifications non lues
+    const unreadCount = notifications.filter(n => !n.isRead).length;
+
+    // Solde formaté pour l'affichage
+    const formattedBalance = formatBalance(currentBalance); 
+    
+    const toggleMenu = useCallback((e) => {
+        if (e && (e.target.closest('.overlay-button') || e.target.closest('.dropdown-menu'))) {
+            return;
+        }
+        setIsMenuOpen(false);
+    }, []);
+
+    useEffect(() => {
+        document.addEventListener('click', toggleMenu);
+        return () => {
+            document.removeEventListener('click', toggleMenu);
+        };
+    }, [toggleMenu]);
+    
+    const handleMenuItemClick = (page) => {
+        navigate(page);
+        setIsMenuOpen(false); // Ferme le menu après la navigation
+    };
+
+
+    return (
+        <>
+            {/* Scène 3D en arrière-plan */}
+            <ThreeScene currentPage="dashboard" />
+
+            {/* Overlay 2D pour les données clés */}
+            <div id="data-overlay" className="absolute top-0 left-0 w-full h-full z-20 pointer-events-none">
+                
+                {/* Titulaire du Compte */}
+                <div className="absolute top-20 left-4 md:top-20 md:left-6 p-4 rounded-lg shadow-xl w-4/5 max-w-xs"
+                     style={{ 
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+                        pointerEvents: 'none'
+                     }}
+                >
+                    <p className="text-sm sm:text-lg font-medium text-gray-700">Bienvenue Mr</p>
+                    <p className="text-lg sm:text-xl font-bold text-sky-800 mt-1">{ACCOUNT_HOLDER_NAME}</p>
+                </div>
+
+                {/* Solde Actuel */}
+                <div className="absolute top-[11rem] left-4 md:top-[12rem] md:left-6 p-6 rounded-xl shadow-2xl backdrop-blur-sm w-11/12 max-w-xs md:max-w-sm"
+                     style={{ 
+                        backgroundColor: 'rgba(135, 206, 235, 0.7)',
+                        pointerEvents: 'none'
+                     }}
+                >
+                    <p className="text-base sm:text-xl font-semibold text-white opacity-90">Solde Actuel</p>
+                    <p className="text-3xl sm:text-5xl font-extrabold text-white mt-2">{formattedBalance}</p>
+                </div>
+            </div>
+
+            {/* Conteneur Flex pour les 3 blocs du bas : HISTORIQUE | PARTENAIRES | SUPPORT */}
+            <div id="bottom-bar-container" className="absolute bottom-0 left-0 right-0 p-4 z-30 pointer-events-none flex flex-col md:flex-row justify-center md:justify-end items-center md:items-start gap-4 md:gap-6">
+                
+                <div className="md:order-1 pointer-events-auto">
+                    <TransactionHistoryOverlay transactions={transactions} />
+                </div>
+                
+                {/* PARTENAIRES : Rendu interactif pour Mastercard */}
+                <div className="md:order-2"> 
+                    <PartnerLogosOverlay 
+                        handleMastercardDeposit={handleMastercardDeposit}
+                    />
+                </div>
+                
+                <div className="md:order-3 pointer-events-auto">
+                    <SupportContactOverlay />
+                </div>
+                
+            </div>
+
+
+            {/* Overlay 2D pour le Header et les boutons interactifs */}
+            <div id="dashboard-overlay" className="absolute top-0 left-0 w-full h-full z-30 pointer-events-none">
+                {/* Header/Menu */}
+                <div className="flex justify-between items-start p-3 sm:p-4 bg-sky-800/80 backdrop-blur-sm shadow-lg w-full pointer-events-auto">
+                    <div className="text-white text-base sm:text-lg font-semibold flex items-center">Barclays</div>
+                    
+                    <div className="flex space-x-2 sm:space-x-3">
+                        {/* Bouton de Notification - Géré pour le clic uniquement */}
+                        <div className="relative">
+                            <button 
+                                id="notification-btn" 
+                                onClick={handleOpenNotification} 
+                                className="bg-yellow-400 hover:bg-yellow-500 text-gray-800 p-2 text-sm rounded-full shadow-lg transition duration-200 flex items-center overlay-button"
+                            >
+                                <Bell className="w-5 h-5" /> <span className="hidden sm:inline ml-1">Notifications</span>
+                            </button>
+                            {/* Badge non lu - S'affiche uniquement si non lu */}
+                            {unreadCount > 0 && (
+                                <span className="absolute top-0 right-0 block h-5 w-5 rounded-full ring-2 ring-white bg-red-500 transform translate-x-1 -translate-y-1 text-xs text-white font-bold flex items-center justify-center">
+                                    {unreadCount}
+                                </span>
+                            )}
+                        </div>
+                        
+                        {/* Menu Déroulant */}
+                        <div className="relative">
+                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }} className="bg-white text-sky-500 p-2 text-sm rounded-full hover:bg-gray-100 flex items-center shadow-lg overlay-button">
+                                <Menu className="w-5 h-5" /> <span className="hidden sm:inline ml-1">Menu</span>
+                            </button>
+                            
+                            <div className={`dropdown-menu absolute right-0 mt-2 w-48 sm:w-56 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 ${isMenuOpen ? '' : 'hidden'}`}>
+                                <a href="#" onClick={() => handleMenuItemClick('transfer')} className="block px-4 py-2 text-sm text-gray-700 hover:bg-sky-500 hover:text-white rounded-t-md flex items-center"><Send className="w-4 h-4 mr-2"/> Virement</a>
+                                <a href="#" onClick={() => handleMenuItemClick('statement')} className="block px-4 py-2 text-sm text-gray-700 hover:bg-sky-500 hover:text-white flex items-center"><BookOpen className="w-4 h-4 mr-2"/> Relevé de Compte</a>
+                                
+                                <div className="border-t border-gray-100 my-1"></div>
+                                
+                                <button onClick={(e) => { e.stopPropagation(); setIsServicesOpen(!isServicesOpen); }} className="flex justify-between items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                    <span className="font-semibold text-gray-700 flex items-center"><DollarSign className="w-4 h-4 mr-2 text-green-600"/> Nos Services</span>
+                                    <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isServicesOpen ? 'rotate-180' : 'rotate-0'}`} />
+                                </button>
+                                
+                                <div className={`${isServicesOpen ? '' : 'hidden'}`}>
+                                    <a href="#" onClick={() => handleMenuItemClick('services')} className="block pl-8 pr-4 py-2 text-xs text-gray-600 hover:bg-sky-500 hover:text-white">Épargne & Investissement</a>
+                                    <a href="#" onClick={() => handleMenuItemClick('services')} className="block pl-8 pr-4 py-2 text-xs text-gray-600 hover:bg-sky-500 hover:text-white">Crédits & Assurances</a>
+                                </div>
+
+                                <div className="border-t border-gray-100 mt-1"></div>
+                                <a href="#" onClick={onLogout} className="block px-4 py-2 text-sm text-red-500 hover:bg-red-500 hover:text-white rounded-b-md flex items-center"><LogOut className="w-4 h-4 mr-2"/> Déconnexion</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            {/* Modale de Notification */}
+            {/* Elle est maintenant gérée par le composant App principal pour accéder à toutes les notifications */}
+        </>
+    );
+};
+
+
+// --- COMPOSANT PAGE DE VIREMENT ---
+const TransferPage = ({ navigate, currentBalance, handleTransfer }) => {
+    // État pour les champs de saisie libre
+    const [amount, setAmount] = useState('');
+    const [recipient, setRecipient] = useState(''); // Nom du bénéficiaire
+    const [iban, setIban] = useState(''); // IBAN
+    const [motive, setMotive] = useState(''); // Motif
+    const [isAlertOpen, setIsAlertOpen] = useState(false); // État pour la modale custom
+    const [alertMessage, setAlertMessage] = useState('');
+    const [alertTitle, setAlertTitle] = useState('');
+    
+    // Solde formaté pour l'affichage
+    const formattedBalance = formatBalance(currentBalance); 
+    
+    // Fonction pour remplacer alert()
+    const showAlert = (title, message) => {
+        setAlertTitle(title);
+        setAlertMessage(message);
+        setIsAlertOpen(true);
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        
+        const transferAmount = parseFloat(amount);
+
+        // 1. Vérification de la saisie
+        if (!recipient.trim()) {
+            showAlert("Erreur de Saisie", "Veuillez entrer le nom du bénéficiaire.");
+            return;
+        }
+        if (iban.trim().length < 15) {
+            showAlert("Erreur de Saisie", "Veuillez entrer un IBAN valide (min 15 caractères).");
+            return;
+        }
+        if (isNaN(transferAmount) || transferAmount <= 0) {
+            showAlert("Erreur de Saisie", "Veuillez entrer un montant valide (> 0).");
+            return;
+        }
+        
+        // 2. Déclenchement de la fonction de transfert dans le composant parent (App)
+        const success = handleTransfer({
+            amount: transferAmount,
+            recipient: recipient,
+            iban: iban,
+            motive: motive,
+            type: 'debit'
         });
 
-        function showDashboard() {
-            document.getElementById('login-page').style.display = 'none';
-            document.getElementById('dashboard-page').style.display = 'block';
+        if (success) {
+             showAlert(
+                 "Virement Réussi", 
+                 `Virement de ${formatAmount(transferAmount, 'debit')} effectué.\n\nÀ : ${recipient}\nIBAN : ${iban}\nMotif : ${motive || 'Non spécifié'}\n\nVotre nouveau solde est de : ${formatBalance(currentBalance - transferAmount)}`
+             );
+            
+            // Réinitialisation des champs après simulation
+            setAmount('');
+            setRecipient('');
+            setIban('');
+            setMotive('');
+        } else {
+            showAlert("Échec du Virement", "Votre solde est insuffisant pour effectuer cette opération.");
+        }
+    };
+
+    return (
+        <div className="absolute top-0 left-0 w-full h-full p-4 sm:p-6 md:p-12 bg-gray-50 z-30 pointer-events-auto overflow-y-auto">
+            <button onClick={() => navigate('dashboard')} className="bg-sky-500 text-white p-2 rounded-lg mb-6 flex items-center hover:bg-sky-600 shadow-lg transition duration-200">
+                <ChevronLeft className="w-5 h-5 mr-2"/> Retour au Tableau de Bord
+            </button>
+
+            <div className="max-w-xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl border-t-4 border-sky-400">
+                <h2 className="text-3xl font-extrabold text-sky-800 mb-6">Effectuer un Virement</h2>
+                {/* Affichage dynamique du solde */}
+                <p className="text-gray-600 mb-6">Solde disponible: <span className={`font-bold text-lg ${currentBalance < 0 ? 'text-red-600' : 'text-green-600'}`}>{formattedBalance}</span></p>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* CHAMP NOM (Bénéficiaire) - Saisie libre */}
+                    <div>
+                        <label htmlFor="recipient" className="block text-sm font-medium text-gray-700 mb-1">Nom du Bénéficiaire :</label>
+                        <input type="text" id="recipient" value={recipient} onChange={(e) => setRecipient(e.target.value)} required
+                               placeholder="Nom et Prénom (ou Dénomination sociale)"
+                               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition"/>
+                    </div>
+
+                    {/* CHAMP IBAN - Saisie libre */}
+                    <div>
+                        <label htmlFor="iban" className="block text-sm font-medium text-gray-700 mb-1">IBAN :</label>
+                        <input type="text" id="iban" value={iban} 
+                               onChange={(e) => setIban(e.target.value.toUpperCase().replace(/[^A-Z0-9\s]/g, ''))} 
+                               required 
+                               minLength="15"
+                               placeholder="Ex: FR76 XXXXXXXXXXX..."
+                               className="w-full p-3 border border-red-400 rounded-lg text-lg focus:ring-red-500 focus:border-red-500 transition text-gray-800"/>
+                        <p className="text-xs text-red-600 mt-1">Veuillez saisir l'IBAN complet de votre bénéficiaire.</p>
+                    </div>
+                    
+                    {/* CHAMP MOTIF DE VIREMENT */}
+                    <div>
+                        <label htmlFor="motive" className="block text-sm font-medium text-gray-700 mb-1">Motif du Virement (Optionnel) :</label>
+                        <input type="text" id="motive" value={motive} onChange={(e) => setMotive(e.target.value)}
+                               placeholder="Ex: Loyer, Cadeau, Remboursement..."
+                               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition"/>
+                    </div>
+
+
+                    {/* CHAMP MONTANT */}
+                    <div>
+                        <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">Montant (€) :</label>
+                        <input type="number" id="amount" value={amount} onChange={(e) => setAmount(e.target.value)} required min="1" step="0.01"
+                               placeholder="Ex: 500.00"
+                               className="w-full p-3 border border-gray-300 rounded-lg text-xl focus:ring-sky-500 focus:border-sky-500 transition"/>
+                    </div>
+                    
+                    <button type="submit" className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 shadow-md flex items-center justify-center">
+                        <Send className="w-5 h-5 mr-2"/> CONFIRMER LE VIREMENT
+                    </button>
+                </form>
+            </div>
+            {/* Modale Custom pour les alertes */}
+            <CustomModal isOpen={isAlertOpen} onClose={() => setIsAlertOpen(false)} title={alertTitle}>
+                <p className="text-gray-700 whitespace-pre-line">{alertMessage}</p>
+                <button onClick={() => setIsAlertOpen(false)} className="mt-4 w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 rounded-lg transition duration-200">
+                    OK
+                </button>
+            </CustomModal>
+        </div>
+    );
+};
+
+
+// --- COMPOSANT PAGE RELEVÉ DE COMPTE ---
+const StatementPage = ({ navigate }) => {
+    const [year, setYear] = useState('2025');
+    const statements = [
+        { month: 'Novembre 2025', status: 'Disponible', action: () => console.log('Téléchargement Novembre 2025') },
+        { month: 'Octobre 2025', status: 'Disponible', action: () => console.log('Téléchargement Octobre 2025') },
+        { month: 'Septembre 2025', status: 'Disponible', action: () => console.log('Téléchargement Septembre 2025') },
+        { month: 'Août 2025', status: 'Disponible', action: () => console.log('Téléchargement Août 2025') },
+        { month: 'Juillet 2025', status: 'Disponible', action: () => console.log('Téléchargement Juillet 2025') },
+    ];
+    
+    return (
+        <div className="absolute top-0 left-0 w-full h-full p-4 sm:p-6 md:p-12 bg-gray-50 z-30 pointer-events-auto overflow-y-auto">
+            <button onClick={() => navigate('dashboard')} className="bg-sky-500 text-white p-2 rounded-lg mb-6 flex items-center hover:bg-sky-600 shadow-lg transition duration-200">
+                <ChevronLeft className="w-5 h-5 mr-2"/> Retour au Tableau de Bord
+            </button>
+
+            <div className="max-w-xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl border-t-4 border-sky-400">
+                <h2 className="text-3xl font-extrabold text-sky-800 mb-6">Relevés de Compte</h2>
+                <p className="text-gray-600 mb-6">Téléchargez vos relevés au format PDF.</p>
+
+                <div className="mb-6">
+                    <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">Sélectionner l'Année :</label>
+                    <select id="year-select" value={year} onChange={(e) => setYear(e.target.value)}
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-sky-500 focus:border-sky-500 transition appearance-none bg-white">
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
+                    </select>
+                </div>
+
+                <div className="space-y-4">
+                    {statements.map((statement, index) => (
+                        <div key={index} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg shadow-sm">
+                            <p className="font-semibold text-gray-700">{statement.month} ({year})</p>
+                            <button onClick={statement.action} 
+                                    className="px-4 py-2 bg-green-500 text-white text-sm font-medium rounded-lg hover:bg-green-600 transition shadow-md">
+                                Télécharger PDF
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- COMPOSANT PAGE DES SERVICES ---
+const ServicesPage = ({ navigate }) => {
+    const serviceCards = [
+        { id: 'crypto', title: '📈 Épargne & Investissement en Crypto', text: "Explorez le monde de la cryptomonnaie avec des outils d'investissement sécurisés et réglementés par Barclays. Commencez à diversifier votre portefeuille dès aujourd'hui.", color: 'border-yellow-500', linkText: "Commencer l'investissement →" },
+        { id: 'credit', title: '🏠 Crédits & Prêts', text: 'Financement pour tous vos projets : immobilier, automobile ou personnel. Demandez un prêt en ligne avec des taux compétitifs, une réponse rapide et un accompagnement personnalisé.', color: 'border-sky-500', linkText: 'Simuler un prêt →' },
+        { id: 'assurance', title: '🛡️ Assurances', text: 'Protégez ce qui compte le plus. Nous proposons des assurances habitation, automobile et santé sur mesure pour vous offrir une tranquillité d’esprit totale.', color: 'border-green-500', linkText: "Voir nos offres d'assurance →" },
+    ];
+
+    return (
+        <div id="services-page" className="absolute top-0 left-0 w-full h-full p-4 sm:p-6 md:p-12 bg-gray-50 z-30 pointer-events-auto overflow-y-auto">
+            <button onClick={() => navigate('dashboard')} className="bg-sky-500 text-white p-2 rounded-lg mb-6 flex items-center hover:bg-sky-600 shadow-lg transition duration-200">
+                <ChevronLeft className="w-5 h-5 mr-2"/> Retour au Tableau de Bord
+            </button>
+
+            <h2 className="text-3xl sm:text-4xl font-extrabold text-sky-800 mb-8">Découvrez nos services financiers</h2>
+            
+            <div className="space-y-6 max-w-4xl mx-auto">
+                {serviceCards.map(card => (
+                    <div key={card.id} id={`card-${card.id}`} className={`bg-white p-6 rounded-xl shadow-lg border-l-4 ${card.color} transition duration-300 hover:shadow-xl`}>
+                        <h3 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 flex items-center">{card.title}</h3>
+                        <p className="text-sm sm:text-base text-gray-600">{card.text}</p>
+                        <a href="#" onClick={() => console.log(`Lien vers la page ${card.title} simulé`)} className="text-sky-500 hover:text-sky-700 font-semibold mt-3 block">{card.linkText}</a>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+
+// --- COMPOSANT MODALE DE DÉPÔT MASTERCARD ---
+const MastercardDepositModal = ({ isOpen, onClose, onConfirmDeposit, currentBalance }) => {
+    const [amount, setAmount] = useState('');
+    const [error, setError] = useState('');
+
+    const formattedBalance = formatBalance(currentBalance);
+
+    const handleDepositSubmit = (e) => {
+        e.preventDefault();
+        setError('');
+
+        const depositAmount = parseFloat(amount);
+        
+        if (isNaN(depositAmount) || depositAmount <= 0) {
+            setError('Veuillez entrer un montant de dépôt valide (> 0).');
+            return;
         }
 
-        function showLogin() {
-            // Réinitialise les champs avant de revenir à la connexion
-            document.getElementById('login-page').style.display = 'flex'; // Utiliser 'flex' pour centrer
-            document.getElementById('dashboard-page').style.display = 'none';
-            document.getElementById('error-message').textContent = '';
+        // Simuler le dépôt
+        onConfirmDeposit(depositAmount);
+        
+        // Fermer la modale et réinitialiser
+        onClose();
+        setAmount('');
+    };
+
+    return (
+        <CustomModal isOpen={isOpen} onClose={onClose} title={<span className="flex items-center"><PlusCircle className="w-5 h-5 mr-2 text-green-500"/> Dépôt Rapide Mastercard</span>}>
+            <p className="text-sm text-gray-600 mb-4">Simulez un dépôt immédiat par virement Mastercard.</p>
+            
+            <p className="text-gray-600 mb-4">Solde actuel : <span className="font-bold text-green-600">{formattedBalance}</span></p>
+
+            <form onSubmit={handleDepositSubmit} className="space-y-4">
+                <div>
+                    <label htmlFor="deposit-amount" className="block text-sm font-medium text-gray-700 mb-1">Montant à Déposer (€) :</label>
+                    <input 
+                        type="number" 
+                        id="deposit-amount" 
+                        value={amount} 
+                        onChange={(e) => setAmount(e.target.value)} 
+                        required 
+                        min="1" 
+                        step="0.01"
+                        placeholder="Ex: 1000.00"
+                        className="w-full p-3 border border-sky-400 rounded-lg text-lg focus:ring-sky-500 focus:border-sky-500 transition"
+                    />
+                </div>
+                
+                {error && <p className="text-red-500 text-sm">{error}</p>}
+                
+                <button type="submit" className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg transition duration-200 shadow-md flex items-center justify-center">
+                    CONFIRMER LE DÉPÔT
+                </button>
+            </form>
+        </CustomModal>
+    );
+};
+
+
+// --- COMPOSANT PRINCIPAL (App) ---
+export default function App() {
+    const [currentPage, setCurrentPage] = useState('login');
+    const [balance, setBalance] = useState(INITIAL_BALANCE); 
+    // État pour l'historique des transactions, trié par ID décroissant
+    const [transactions, setTransactions] = useState(INITIAL_TRANSACTION_HISTORY.sort((a, b) => b.id - a.id)); 
+    // État pour toutes les notifications
+    const [notifications, setNotifications] = useState([INITIAL_UNREAD_NOTIFICATION_DATA]); 
+    const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+    const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+    const [isAlertOpen, setIsAlertOpen] = useState(false);
+    const [alertMessage, setAlertMessage] = useState('');
+    const [alertTitle, setAlertTitle] = useState('');
+
+    // Fonction pour générer un ID unique (basé sur le nombre actuel de notifications/transactions)
+    const generateId = () => Math.max(...transactions.map(t => t.id), ...notifications.map(n => n.id || 0), 0) + 1;
+
+    const showAlert = (title, message) => {
+        setAlertTitle(title);
+        setAlertMessage(message);
+        setIsAlertOpen(true);
+    };
+
+    const handleLogin = () => {
+        setCurrentPage('dashboard');
+    };
+
+    const handleLogout = () => {
+        setCurrentPage('login');
+        setBalance(INITIAL_BALANCE); 
+        setTransactions(INITIAL_TRANSACTION_HISTORY.sort((a, b) => b.id - a.id));
+        setNotifications([INITIAL_UNREAD_NOTIFICATION_DATA]);
+    };
+    
+    // Fonction de navigation unique
+    const navigate = (page) => {
+        setCurrentPage(page);
+    };
+    
+    // Fonction générique pour ajouter une transaction et une notification
+    const addTransactionAndNotification = (transactionData) => {
+        const newId = generateId();
+        const date = getCurrentDate();
+        
+        // 1. Mise à jour du solde
+        const newBalance = transactionData.type === 'debit' 
+            ? balance - transactionData.amount 
+            : balance + transactionData.amount;
+        setBalance(newBalance);
+
+        // 2. Création de l'entrée de transaction
+        const newTransaction = {
+            id: newId,
+            date: date,
+            amount: transactionData.amount,
+            type: transactionData.type,
+            description: transactionData.description,
+        };
+        setTransactions(prev => [newTransaction, ...prev]);
+
+        // 3. Création de la notification
+        let notificationTitle;
+        let notificationMessage;
+        
+        if (transactionData.type === 'debit') {
+            notificationTitle = "Virement Effectué";
+            notificationMessage = `Votre virement de ${formatAmount(transactionData.amount, 'debit')} vers ${transactionData.recipient} a été exécuté.\nNouveau Solde : ${formatBalance(newBalance)}.`;
+        } else { // type === 'credit'
+            notificationTitle = "Dépôt Reçu";
+            notificationMessage = `Un dépôt de ${formatAmount(transactionData.amount, 'credit')} a été crédité sur votre compte.\nMotif : ${transactionData.motive}.\nNouveau Solde : ${formatBalance(newBalance)}.`;
         }
-        /* --- JAVASCRIPT : FIN --- */
-    </script>
-</body>
-</html>
+        
+        const newNotification = {
+            id: newId,
+            date: date,
+            title: notificationTitle,
+            message: notificationMessage,
+            isRead: false,
+        };
+        setNotifications(prev => [newNotification, ...prev]);
+        
+        return newBalance;
+    };
+    
+    // Fonction de gestion du virement (débit)
+    const handleTransfer = ({ amount, recipient, iban, motive, type }) => {
+        if (amount > balance) {
+            return false;
+        }
+        
+        addTransactionAndNotification({
+            amount: amount,
+            type: 'debit',
+            description: `Virement ${recipient} (IBAN: ${iban.slice(-4)})`,
+            recipient: recipient, // Pour le message d'alerte/notification
+        });
+        
+        return true;
+    };
+    
+    // Fonction pour ouvrir la modale de dépôt Mastercard
+    const handleMastercardDepositClick = () => {
+        setIsDepositModalOpen(true);
+    };
+
+    // Fonction pour confirmer et effectuer le dépôt (crédit)
+    const handleConfirmDeposit = (amount) => {
+        const newBalance = addTransactionAndNotification({
+            amount: amount,
+            type: 'credit',
+            description: 'Dépôt par Mastercard (Rapide)',
+            motive: 'Dépôt Mastercard', // Pour le message de notification
+        });
+
+        showAlert(
+            "Dépôt Réussi", 
+            `Votre dépôt de ${formatAmount(amount, 'credit')} a été crédité instantanément.\n\nVotre nouveau solde est de : ${formatBalance(newBalance)}.`
+        );
+    };
+    
+    // Gère l'ouverture de la modale de notifications et marque toutes les notifications comme lues
+    const handleOpenNotification = () => {
+        setIsNotificationModalOpen(true);
+        // Marquer toutes les notifications comme lues lors de l'ouverture
+        setNotifications(prevNotifications => 
+            prevNotifications.map(n => ({ ...n, isRead: true }))
+        );
+    };
+
+    const renderPage = () => {
+        switch (currentPage) {
+            case 'login':
+                return <LoginPage onLogin={handleLogin} />;
+            case 'dashboard':
+                return <Dashboard 
+                            onLogout={handleLogout} 
+                            navigate={navigate} 
+                            currentBalance={balance} 
+                            handleMastercardDeposit={handleMastercardDepositClick} 
+                            transactions={transactions} // Passage de l'historique
+                            notifications={notifications} // Passage des notifications pour le badge
+                            handleOpenNotification={handleOpenNotification} // Passage pour le bouton Bell
+                        />;
+            case 'transfer':
+                return <TransferPage 
+                            navigate={navigate} 
+                            currentBalance={balance} 
+                            handleTransfer={handleTransfer} // Passage de la fonction de débit
+                        />;
+            case 'statement':
+                return <StatementPage navigate={navigate} />;
+            case 'services':
+                return <ServicesPage navigate={navigate} />;
+            default:
+                return <LoginPage onLogin={handleLogin} />;
+        }
+    };
+
+    return (
+        <div id="app-container" className="relative w-screen h-screen flex flex-col items-center justify-center bg-white overflow-hidden font-sans">
+            {renderPage()}
+            
+            {/* Modale de Dépôt Mastercard */}
+            <MastercardDepositModal
+                isOpen={isDepositModalOpen}
+                onClose={() => setIsDepositModalOpen(false)}
+                onConfirmDeposit={handleConfirmDeposit}
+                currentBalance={balance}
+            />
+            
+            {/* Modale de Notification (Modifiée pour prendre l'état des notifications) */}
+            <NotificationModal 
+                isOpen={isNotificationModalOpen} 
+                onClose={() => setIsNotificationModalOpen(false)} 
+                notifications={notifications}
+            />
+            
+            {/* Modale Custom pour les messages de succès/erreur au niveau global */}
+            <CustomModal isOpen={isAlertOpen} onClose={() => setIsAlertOpen(false)} title={alertTitle}>
+                <p className="text-gray-700 whitespace-pre-line">{alertMessage}</p>
+                <button onClick={() => setIsAlertOpen(false)} className="mt-4 w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 rounded-lg transition duration-200">
+                    OK
+                </button>
+            </CustomModal>
+        </div>
+    );
+}
